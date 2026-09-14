@@ -1,0 +1,16 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "visor-sesiones",
+      "runtimeExecutable": "powershell.exe",
+      "runtimeArgs": [
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-File",
+        "C:\\Users\\WXICLCSTEM21\\AppData\\Local\\Temp\\claude\\C--Users-WXICLCSTEM21-Documents-GitHub-WRO-RM-2026\\952e8e32-913b-4e04-baa7-89fb049b710e\\scratchpad\\servidor.ps1"
+      ],
+      "port": 8765
+    }
+  ]
+}

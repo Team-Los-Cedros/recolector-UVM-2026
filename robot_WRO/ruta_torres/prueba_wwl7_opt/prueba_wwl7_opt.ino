@@ -118,6 +118,26 @@
 #define RECTO_PWM_ANTIATASCO   120
 #define RECTO_MS_ATASCO       1500
 
+// ---- Rampa de ACELERACION (el tambaleo con la torre, Prueba_6 y 7, 12/09) ----
+// Hasta ahora moverRecto() y girarGyro() solo tenian rampa de FRENADO: al
+// arrancar saltaban de PWM 0 al de crucero en UN solo ciclo de 5 ms. En la
+// grabacion de Prueba_6 se ve: el robot pasa de parado a velocidad plena en un
+// fotograma (33 ms). Con la torre por delante del eje de las ruedas ese tiron
+// hace cabecear al robot (se va hacia atras y rebota hacia delante); en el
+// rebote las ruedas pierden agarre, patinan, y los encoders cuentan vueltas que
+// el robot NO recorrio: el tramo se queda corto y la ruta se descuadra.
+// Ahora el PWM sube como mucho estas cuentas por ciclo de control (200 Hz):
+//     cuentas por ciclo x 200 = cuentas de PWM por segundo
+//     6 -> 1200 PWM/s: de 0 a 255 en 0,21 s     (sin carga)
+//     3 ->  600 PWM/s: de 0 a 255 en 0,43 s     (con la torre en la garra)
+// Solo cuesta tiempo en los tramos rapidos: a V_APROX (PWM 56) la rampa dura
+// 0,05 s. Si sigue tambaleandose, baja estos numeros; si la ruta se hace larga,
+// subelos.
+#define RECTO_PWM_SUBIDA         6
+#define RECTO_PWM_SUBIDA_CARGA   3
+#define GIRO_PWM_SUBIDA          8
+#define GIRO_PWM_SUBIDA_CARGA    4
+
 // ---- Compensacion de bateria / carga en los avances (Prueba_4, 10/09) ----
 // Con la bateria baja, el PWM de V_APROX (56) ya no movia al robot con la torre
 // subida. El anti-atasco viejo subia el PWM hasta que el robot arrancaba DE
@@ -688,6 +708,14 @@ void pararTodo(void)
   for (;;) { delay(200); }
 }
 
+// ---- Aviso de "llevo la torre encima" -------------------------------------
+// cargaTorre(true) antes de mover el robot con la parte superior en la garra y
+// cargaTorre(false) en cuanto la suelta. Lo unico que cambia es que las rampas
+// de arranque son mas suaves (RECTO_PWM_SUBIDA_CARGA / GIRO_PWM_SUBIDA_CARGA),
+// que es justo cuando el cabeceo hace patinar las ruedas.
+bool llevaCarga = false;
+void cargaTorre(bool activa) { llevaCarga = activa; }
+
 // ============================================================================
 //  7. GIROS CON GIROSCOPIO
 //
@@ -730,6 +758,9 @@ void girarGyro(float gradosObjetivo, float velocidad, int sentido, float timeout
   // ---- Fase 1: crucero con rampa de frenado ----
   float    mejor     = 0.0f;      // maximo recorrido visto hasta ahora
   uint32_t tProgreso = millis();  // ultima vez que el robot avanzo de verdad
+  int16_t  aplicado  = 0;         // PWM del ciclo anterior (rampa de aceleracion)
+  const int16_t subida = llevaCarga ? (int16_t)GIRO_PWM_SUBIDA_CARGA
+                                    : (int16_t)GIRO_PWM_SUBIDA;
 
   for (;;) {
     tarea();
@@ -754,6 +785,12 @@ void girarGyro(float gradosObjetivo, float velocidad, int sentido, float timeout
       if (p < suelo) p = suelo;
     }
 
+    // Rampa de aceleracion (misma idea que en moverRecto): sin ella el giro
+    // empieza con el PWM de crucero de golpe y, con la torre levantada, el
+    // robot se bambolea y una rueda pierde agarre justo al arrancar.
+    if (p > aplicado + subida) p = aplicado + subida;
+    aplicado = p;
+
     pwmGiro(sentido > 0 ? p : (int16_t)-p);
     esperarPeriodo(tCtrl);
   }
@@ -771,18 +808,26 @@ void girarGyro(float gradosObjetivo, float velocidad, int sentido, float timeout
     int8_t   dir    = (err > 0.0f) ? (int8_t)sentido : (int8_t)-sentido;
     uint32_t tCorr  = millis();
     uint32_t tMov   = millis();
+    uint32_t tSube  = millis();
     uint32_t tCtrl2 = micros();
+    // El tope es GIRO_PWM_ANTIATASCO, NO pwmCrucero: en los giros lentos
+    // pwmCrucero vale lo mismo que GIRO_PWM_MIN y la correccion no podia
+    // subir de ahi, asi que si el robot se quedaba pegado no salia nunca.
+    int16_t  p      = GIRO_PWM_MIN;
 
     while (millis() - tCorr < GIRO_MS_CORR) {
       tarea();
       float e = gradosObjetivo - fabs(gyro.grados() - h0);
       if ((err > 0.0f && e <= 0.0f) || (err < 0.0f && e >= 0.0f)) break;
 
-      // El tope es GIRO_PWM_ANTIATASCO, NO pwmCrucero: en los giros lentos
-      // pwmCrucero vale lo mismo que GIRO_PWM_MIN y la correccion no podia
-      // subir de ahi, asi que si el robot se quedaba pegado no salia nunca.
+      // Igual que en moverRecto: el PWM solo sube mientras dura la correccion.
+      // Antes se reiniciaba al minimo en cuanto el robot se movia, y el giro
+      // fino terminaba en una serie de tironcitos.
       if (fabs(gyro.velocidad()) > 8.0f) tMov = millis();
-      int16_t p = refuerzoAntiAtasco(millis() - tMov, GIRO_PWM_MIN, GIRO_PWM_ANTIATASCO);
+      if (millis() - tMov > 120 && millis() - tSube >= 12 && p < GIRO_PWM_ANTIATASCO) {
+        p++;
+        tSube = millis();
+      }
 
       pwmGiro(dir > 0 ? p : (int16_t)-p);
       esperarPeriodo(tCtrl2);
@@ -889,6 +934,10 @@ void moverRecto(long grados, float velocidad, float timeoutSeg, int8_t sentido)
   long     mejor     = 0;
   uint32_t tProgreso = millis();
   int16_t  comp      = 0;          // PWM extra por bateria baja o carga (COMP_*)
+  int16_t  aplicado  = 0;          // PWM del ciclo anterior (rampa de aceleracion)
+  bool     rampando  = false;      // true mientras la rampa esta limitando el PWM
+  const int16_t subida = llevaCarga ? (int16_t)RECTO_PWM_SUBIDA_CARGA
+                                    : (int16_t)RECTO_PWM_SUBIDA;
 
 #if COMP_ACTIVA
   const float DPS_POR_PWM = RPM_MAX * 6.0f / 255.0f;  // grados/s de eje por cuenta de PWM
@@ -917,7 +966,12 @@ void moverRecto(long grados, float velocidad, float timeoutSeg, int8_t sentido)
     if (ahoraMs - tComp >= COMP_MS) {
       float real     = (float)(avance - avComp) * 1000.0f / (float)(ahoraMs - tComp);
       float esperada = (float)base * DPS_POR_PWM;
-      if (real < COMP_LENTO * esperada) {
+      // Mientras la rampa de arranque esta limitando el PWM, el robot va lento
+      // A PROPOSITO: si se midiera aqui, la compensacion se dispararia y
+      // devolveria el tiron que la rampa acaba de quitar.
+      if (rampando) {
+        /* no se toca comp */
+      } else if (real < COMP_LENTO * esperada) {
         if (falta > 25 && ahoraMs - tIni > COMP_MS_ARRANQUE) comp += COMP_SUBE;
       } else if (real > COMP_BIEN * esperada) {
         comp -= COMP_BAJA;
@@ -935,6 +989,14 @@ void moverRecto(long grados, float velocidad, float timeoutSeg, int8_t sentido)
       if (base < suelo) base = suelo;
     }
 #endif
+
+    // ---- Rampa de aceleracion ----
+    // El PWM no puede subir mas de `subida` cuentas por ciclo. Es lo que evita
+    // el tiron de arranque que hacia cabecear al robot con la torre. Para BAJAR
+    // no hay limite: la rampa de frenado y el anti-atasco siguen igual.
+    if (base > aplicado + subida) { base = aplicado + subida; rampando = true; }
+    else                          { rampando = false; }
+    aplicado = base;
 
     aplicarRecto((int16_t)(base * sentido), h0);
     esperarPeriodo(tCtrl);
@@ -956,7 +1018,13 @@ void moverRecto(long grados, float velocidad, float timeoutSeg, int8_t sentido)
     long     ultAv  = avance;
     uint32_t tCorr  = millis();
     uint32_t tMov   = millis();
+    uint32_t tSube  = millis();
     uint32_t tCtrl2 = micros();
+    // Arranca con la compensacion que necesito el tramo: con bateria baja,
+    // RECTO_PWM_MIN solo ya no mueve al robot.
+    int16_t  suelo  = RECTO_PWM_MIN + comp;
+    int16_t  tope   = max(suelo, (int16_t)RECTO_PWM_ANTIATASCO);
+    int16_t  p      = suelo;
 
     while (millis() - tCorr < 500) {
       tarea();
@@ -964,12 +1032,18 @@ void moverRecto(long grados, float velocidad, float timeoutSeg, int8_t sentido)
       long e  = grados - av;
       if ((err > 0 && e <= 0) || (err < 0 && e >= 0)) break;
 
+      // Aqui estaba el otro brinco. Antes se llamaba a refuerzoAntiAtasco() con
+      // un cronometro que se reiniciaba EN CUANTO el robot se movia 3 grados
+      // (1,5 mm): el PWM subia hasta que arrancaba de golpe, se caia al minimo,
+      // el robot se paraba, volvia a subir... 2 o 3 veces por segundo, que es
+      // el mismo ciclo que ya se habia quitado del crucero con COMP_*.
+      // Ahora el PWM SOLO SUBE mientras dura la correccion: sube +1 cada 12 ms
+      // si lleva 120 ms sin moverse, y se queda donde esta cuando se mueve.
       if (labs(av - ultAv) > 2) { ultAv = av; tMov = millis(); }
-      // Arranca con la compensacion que necesito el tramo: con bateria baja,
-      // RECTO_PWM_MIN solo ya no mueve al robot.
-      int16_t suelo = RECTO_PWM_MIN + comp;
-      int16_t tope  = max(suelo, (int16_t)RECTO_PWM_ANTIATASCO);
-      int16_t p = refuerzoAntiAtasco(millis() - tMov, suelo, tope);
+      if (millis() - tMov > 120 && millis() - tSube >= 12 && p < tope) {
+        p++;
+        tSube = millis();
+      }
 
       aplicarRecto((int16_t)(p * dir), h0);
       esperarPeriodo(tCtrl2);
@@ -1971,6 +2045,7 @@ void loop()
   recolectar(4);                                // 95 = PALA_VER_DESTINO: la levanta un poco
   // Si queda torcida en la garra, re-agarrarla como en prueba_wwl5_opt:
   //retroceder(110, V_APROX, 4.0); abrirGarra(); avanzar(45, V_APROX, 2.5); cerrarGarra();
+  cargaTorre(true);                             // desde aqui, rampas suaves
   retroceder(89, V_APROX, 4.0);                // (115 + 31)
 
   // ---- 3. Llevarla hasta la base y colocarla encima ----
@@ -1982,9 +2057,11 @@ void loop()
   avanzar(falta-180, V_RECTO_MEDIO, 5.0);
   recolectar(1);                                // 63: la sube por encima de la base
   girarIzquierdaGyro(1.75, V_GIRO_FINO); 
-  avanzar(180, V_GIRO_FINO, 1.75);              // Completar con más velocidad para que no rebote
-  
+  avanzar(180, V_GIRO_FINO, 2.6);               // Completar con más velocidad para que no rebote
+                                                // (1,75 s se quedaba justo con la rampa de arranque)
+
   colocarSobreBase();                           // baja despacio, suelta, retrocede recto y sube la pala
+  cargaTorre(false);                            // ya no la lleva: rampas normales
   visionPausar();
 
   // ---- 4. Barrer ----
@@ -2027,6 +2104,7 @@ void loop()
   recolectar(4);                                // 95 = PALA_VER_DESTINO: la levanta un poco
   // Si queda torcida en la garra, re-agarrarla como en prueba_wwl5_opt:
   // retroceder(110, V_APROX, 4.0); abrirGarra(); avanzar(45, V_APROX, 2.5); cerrarGarra();
+  cargaTorre(true);                             // desde aqui, rampas suaves
   retroceder(130, V_RECTO_MEDIO, 4.0);                // (115 + 31)
 
   // ---- 7. Llevar la segunda hasta la base y colocarla encima ----
@@ -2040,8 +2118,10 @@ void loop()
   long falta2 = visionDistancia(2190 - 1450);    // 2087 = tramo completo medido en wwl5_opt
   avanzar(falta2-180, V_GIRO_FINO, 5.0);
   recolectar(1);                                // 63: la sube por encima de la base
-  avanzar(180, V_RECTO_MEDIO, 1.5);             // Completar con más velocidad para que no rebote
+  avanzar(186, V_RECTO_MEDIO, 2.3);             // Completar con más velocidad para que no rebote
+                                                // (1,5 s se quedaba justo con la rampa de arranque)
   colocarSobreBase();                           // baja despacio, suelta, retrocede recto y sube la pala
+  cargaTorre(false);                            // ya no la lleva: rampas normales
   visionPausar();
 
   // ---- 8. Ir por visitantes (colores no aleatorios) ----
