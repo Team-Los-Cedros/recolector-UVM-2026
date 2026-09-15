@@ -43,6 +43,7 @@ import glob
 import json
 import os
 from pathlib import Path
+import socket
 import sys
 import threading
 import time
@@ -54,6 +55,7 @@ import time
 _T_ANTES_IMPORTS = time.monotonic()
 
 import cv2
+import numpy as np
 
 from vision_core import (Camara, ContadorFPS, Deteccion, Detector,
                          GestorExclusividadCamara, cargar_config,
@@ -165,6 +167,21 @@ class EnlaceSerial:
         except Exception as e:
             self._marcar_desconectado(e)
 
+    def responder(self, linea):
+        """Manda una respuesta (K, E, F, X) precedida de una linea vacia.
+
+        En setup() la MegaPi pasa mas de un segundo sin leer el serial y su
+        HardwareSerial solo guarda 63 bytes, asi que se queda con una trama T
+        cortada, sin fin de linea. Si la K llegaba justo detras, se pegaba a
+        esa trama: la MegaPi leia "T 0 NINGUK 3.0 ..." y avisaba que la Pi no
+        contesta. Con la camara despierta casi nunca pasaba porque a 20 Hz
+        siempre llegaba antes una T completa; dormida (2 Hz), si. La linea
+        vacia cierra la trama cortada, y todos los sketches ignoran las lineas
+        vacias (if (nBufVis > 0)).
+        """
+        self.enviar("")
+        self.enviar(linea)
+
     def leer_lineas(self):
         """Lectura no bloqueante; devuelve las lineas completas recibidas."""
         if self.ser is None:
@@ -194,21 +211,37 @@ class EnlaceSerial:
 # ---------------------------------------------------------------------------
 
 class BufferFrame:
+    """Ultima foto para la web: con overlay y cruda, ya en JPEG.
+
+    seq cuenta las fotos: cada cliente de /stream espera a que cambie en vez de
+    mandar a ciegas cada 50 ms, que repetia fotos o se las saltaba. La version
+    reducida (mitad de resolucion, calidad baja) solo se calcula si un cliente
+    lento la pide, y una sola vez por foto aunque la pidan varios.
+    """
     def __init__(self):
         self.lock = threading.Lock()
+        self.cambio = threading.Condition(self.lock)
         self.jpeg = None
         self.raw_jpeg = None
+        self.seq = 0
+        self._lock_reducida = threading.Lock()
+        self._reducida = None
+        self._seq_reducida = -1
 
     def set(self, frame, frame_raw=None):
         ok, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 60])
-        if ok:
-            with self.lock:
-                self.jpeg = buf.tobytes()
+        raw = None
         if frame_raw is not None:
             ok_r, buf_r = cv2.imencode(".jpg", frame_raw, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
             if ok_r:
-                with self.lock:
-                    self.raw_jpeg = buf_r.tobytes()
+                raw = buf_r.tobytes()
+        if ok:
+            with self.cambio:
+                self.jpeg = buf.tobytes()
+                if raw is not None:
+                    self.raw_jpeg = raw
+                self.seq += 1
+                self.cambio.notify_all()
 
     def get(self):
         with self.lock:
@@ -217,6 +250,112 @@ class BufferFrame:
     def get_raw(self):
         with self.lock:
             return self.raw_jpeg
+
+    def esperar_nueva(self, seq_anterior, timeout=1.0, reducida=False):
+        """(seq, jpeg) de una foto posterior a seq_anterior, o (seq_anterior, None)."""
+        with self.cambio:
+            if self.seq == seq_anterior:
+                self.cambio.wait(timeout)
+            if self.jpeg is None or self.seq == seq_anterior:
+                return seq_anterior, None
+            seq, jpeg = self.seq, self.jpeg
+        if reducida:
+            jpeg = self._reducir(seq, jpeg)
+        return seq, jpeg
+
+    def esperar_raw_nueva(self, timeout=2.5):
+        """La proxima foto cruda. Sin nadie mirando no se codifica, asi que la
+        guardada puede ser vieja; esta peticion ya cuenta como actividad."""
+        with self.cambio:
+            seq = self.seq
+            limite = time.monotonic() + timeout
+            while self.seq == seq:
+                resto = limite - time.monotonic()
+                if resto <= 0:
+                    break
+                self.cambio.wait(resto)
+            return self.raw_jpeg
+
+    def _reducir(self, seq, jpeg):
+        with self._lock_reducida:
+            if self._seq_reducida != seq:
+                # IMREAD_REDUCED_COLOR_2 decodifica ya a mitad de tamano: es
+                # mucho mas barato que decodificar entero y redimensionar.
+                img = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_REDUCED_COLOR_2)
+                ok, buf = (cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 45])
+                           if img is not None else (False, None))
+                self._reducida = buf.tobytes() if ok else jpeg
+                self._seq_reducida = seq
+            return self._reducida
+
+
+class RitmoVideo:
+    """Adapta el video de UN cliente web a lo que aguanta su red.
+
+    La senal es cuanto tarda cada foto en entrar al socket. Con red buena es
+    casi instantaneo; si la red no da abasto, el buffer de envio se llena y
+    write() se bloquea. Entonces se baja un nivel: menos fotos por segundo y, al
+    final, fotos reducidas. Para subir hacen falta 3 s seguidos de envios
+    rapidos, y si una subida no aguanta, la siguiente espera el doble (hasta
+    30 s): asi no se queda probando y atascandose cada pocos segundos en una red
+    que no da para mas. Cada cliente tiene el suyo, y nada de esto toca la
+    vision del robot: la deteccion y las tramas T no dependen de la web.
+    """
+    #          (segundos entre fotos, foto reducida)
+    NIVELES = ((0.05, False),   # 20 fps
+               (0.10, False),   # 10 fps
+               (0.20, False),   #  5 fps
+               (0.20, True),    #  5 fps, mitad de resolucion y calidad baja
+               (0.33, True),    #  3 fps
+               (0.50, True))    #  2 fps
+
+    def __init__(self, fijo=False):
+        self.fijo = fijo
+        self.nivel = 0
+        self._t_bajada = -1e9
+        self._t_subida = -1e9
+        self._t_rapidos = None
+        self._espera_subida = 3.0
+
+    @property
+    def intervalo(self):
+        return self.NIVELES[self.nivel][0]
+
+    @property
+    def reducida(self):
+        return self.NIVELES[self.nivel][1]
+
+    def registrar(self, segundos_envio, ahora=None):
+        if self.fijo:
+            return
+        ahora = time.monotonic() if ahora is None else ahora
+        if segundos_envio > self.intervalo:
+            # La red no aguanta este ritmo. Como mucho un escalon por segundo:
+            # hay que dar tiempo a que se vacie lo que ya estaba en cola.
+            self._t_rapidos = None
+            if self.nivel < len(self.NIVELES) - 1 and ahora - self._t_bajada >= 1.0:
+                if ahora - self._t_subida < 5.0:
+                    # La ultima subida no aguanto: antes de volver a probar,
+                    # esperar el doble.
+                    self._espera_subida = min(30.0, self._espera_subida * 2)
+                self.nivel += 1
+                self._t_bajada = ahora
+        elif segundos_envio < self.intervalo * 0.25:
+            if self._t_rapidos is None:
+                self._t_rapidos = ahora
+            elif self.nivel > 0 and ahora - self._t_rapidos >= self._espera_subida:
+                self.nivel -= 1
+                self._t_rapidos = ahora
+                self._t_subida = ahora
+        else:
+            self._t_rapidos = None
+        if (self._espera_subida > 3.0 and self._t_subida > self._t_bajada
+                and ahora - self._t_subida > 10.0):
+            self._espera_subida = 3.0      # la ultima subida aguanto: red mejor
+
+    def resumen(self):
+        return {"fps": round(1.0 / self.intervalo), "reducida": self.reducida,
+                "nivel": self.nivel, "fijo": self.fijo}
 
 
 class RegistroTelemetria:
@@ -263,6 +402,10 @@ class RegistroTelemetria:
         with self.lock:
             return list(self.items)
 
+    def obtener_ultimos(self, n):
+        with self.lock:
+            return len(self.items), list(self.items)[-n:]
+
     def limpiar(self):
         with self.lock:
             self.items.clear()
@@ -277,7 +420,7 @@ class RegistroTelemetria:
 
 def arrancar_web(buffer_frame, telemetria, estado_global, puerto=8080,
                  callback_modo=None, marcar_actividad=None, callback_ahorro=None,
-                 marcar_stream=None):
+                 marcar_stream=None, marcar_video=None):
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
     from urllib.parse import parse_qs, urlparse
 
@@ -308,10 +451,11 @@ def arrancar_web(buffer_frame, telemetria, estado_global, puerto=8080,
               b"<div id='logs'>Cargando telemetria en vivo...</div>"
               b"</div></div>"
               b"<script>"
-              b"async function updateLogs(){try{let r=await fetch('/telemetria');let d=await r.json();let l=document.getElementById('logs');"
+              b"async function updateLogs(){try{let r=await fetch('/telemetria?ultimos=12');let d=await r.json();let l=document.getElementById('logs');"
               b"if(d.items){l.innerHTML=d.items.slice(-12).reverse().map(e=>`[${e.t_iso.split('T')[1].slice(0,8)}] <b>${e.tipo.toUpperCase()}</b>: `+JSON.stringify(e)).join('<br>');}"
               b"let st=await (await fetch('/estado')).json();"
-              b"document.getElementById('cam').textContent=(st.camara?st.camara.estado:'?')+((st.ahorro&&st.ahorro.habilitado)?' | ahorro activo':' | ahorro apagado');"
+              b"document.getElementById('cam').textContent=(st.camara?st.camara.estado:'?')+((st.ahorro&&st.ahorro.habilitado)?' | ahorro activo':' | ahorro apagado')"
+              b"+' | video: '+(Object.values(st.video||{}).map(v=>v.fps+' fps'+(v.reducida?' reducido':'')).join(', ')||'-');"
               b"}catch(err){}setTimeout(updateLogs, 800);}updateLogs();"
               b"</script></body></html>")
 
@@ -326,11 +470,22 @@ def arrancar_web(buffer_frame, telemetria, estado_global, puerto=8080,
             # el angulo con la imagen en vivo.
             if marcar_actividad:
                 marcar_actividad()
-            if self.path == "/stream":
+            if self.path == "/stream" or self.path.startswith("/stream?"):
+                fijo = "fijo=1" in self.path
                 self.send_response(200)
                 self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
                 self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
+                # Buffer de envio chico: si la red no da abasto, write() se
+                # bloquea enseguida (asi se detecta) y quedan pocas fotos viejas
+                # en cola (asi el retraso no crece sin limite). /stream?fijo=1
+                # desactiva la adaptacion.
+                try:
+                    self.connection.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 32 * 1024)
+                except OSError:
+                    pass
+                ritmo = RitmoVideo(fijo)
+                cliente = "%s:%s" % tuple(self.client_address[:2])
                 # Mientras haya un /stream abierto la camara NO se duerme. Hay
                 # que contarlos en vez de mirar el reloj: con red lenta
                 # wfile.write() se queda bloqueado varios segundos, la marca de
@@ -339,31 +494,42 @@ def arrancar_web(buffer_frame, telemetria, estado_global, puerto=8080,
                 # y al desbloquearse la escritura, despertaba: saltos y desfase.
                 if marcar_stream:
                     marcar_stream(1)
+                if marcar_video:
+                    marcar_video(cliente, ritmo.resumen())
+                seq = -1
                 try:
                     while True:
                         if marcar_actividad:
                             marcar_actividad()
-                        jpeg = buffer_frame.get()
+                        seq, jpeg = buffer_frame.esperar_nueva(seq, timeout=1.0,
+                                                               reducida=ritmo.reducida)
                         if jpeg is None:
-                            time.sleep(0.04)
                             continue
+                        t0 = time.monotonic()
                         self.wfile.write(b"--frame\r\nContent-Type: image/jpeg\r\n"
                                          b"Content-Length: %d\r\n\r\n" % len(jpeg))
                         self.wfile.write(jpeg)
                         self.wfile.write(b"\r\n")
-                        time.sleep(0.05)  # ~20 fps
+                        envio = time.monotonic() - t0
+                        nivel_antes = ritmo.nivel
+                        ritmo.registrar(envio)
+                        if marcar_video and ritmo.nivel != nivel_antes:
+                            marcar_video(cliente, ritmo.resumen())
+                        time.sleep(max(0.0, ritmo.intervalo - envio))
                 except (BrokenPipeError, ConnectionResetError):
                     pass
                 finally:
                     if marcar_stream:
                         marcar_stream(-1)
+                    if marcar_video:
+                        marcar_video(cliente, None)
 
             elif self.path == "/raw":
                 self.send_response(200)
                 self.send_header("Content-Type", "image/jpeg")
                 self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
-                raw = buffer_frame.get_raw()
+                raw = buffer_frame.esperar_raw_nueva()
                 if raw:
                     self.wfile.write(raw)
 
@@ -392,13 +558,25 @@ def arrancar_web(buffer_frame, telemetria, estado_global, puerto=8080,
                 self.end_headers()
                 self.wfile.write(json.dumps(estado_global, ensure_ascii=False).encode("utf-8"))
 
-            elif self.path == "/telemetria":
+            elif self.path == "/telemetria" or self.path.startswith("/telemetria?"):
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
-                items = telemetria.obtener_todos()
-                resp = json.dumps({"total": len(items), "items": items}, ensure_ascii=False)
+                # /telemetria?ultimos=N devuelve solo los N ultimos. La pagina
+                # muestra 12 y consulta cada 800 ms: pedirlo todo eran ~640 kB
+                # por consulta (3000 registros), mas que el propio video.
+                qs = parse_qs(urlparse(self.path).query)
+                try:
+                    ultimos = int(qs.get("ultimos", ["0"])[0])
+                except ValueError:
+                    ultimos = 0
+                if ultimos > 0:
+                    total, items = telemetria.obtener_ultimos(ultimos)
+                else:
+                    items = telemetria.obtener_todos()
+                    total = len(items)
+                resp = json.dumps({"total": total, "items": items}, ensure_ascii=False)
                 self.wfile.write(resp.encode("utf-8"))
 
             elif self.path == "/telemetria/reset":
@@ -534,6 +712,19 @@ def main():
         streams["n"] = max(0, streams["n"] + delta)
         estado_global["streams"] = streams["n"]
 
+    # Ritmo de video de cada cliente, para verlo en /estado y en la pagina. Se
+    # reemplaza el diccionario entero en vez de modificarlo: /estado lo
+    # serializa desde otro hilo y no puede cambiar de tamano mientras tanto.
+    estado_global["video"] = {}
+
+    def marcar_video(cliente, resumen):
+        d = dict(estado_global["video"])
+        if resumen is None:
+            d.pop(cliente, None)
+        else:
+            d[cliente] = resumen
+        estado_global["video"] = d
+
     def set_ahorro(activo):
         ahorro["habilitado"] = bool(activo)
         log("ahorro de camara %s" % ("ACTIVADO" if activo else "DESACTIVADO"))
@@ -542,7 +733,8 @@ def main():
         buffer_frame = BufferFrame()
         arrancar_web(buffer_frame, telemetria, estado_global, puerto_web,
                      callback_modo=set_modo, marcar_actividad=marcar_web,
-                     callback_ahorro=set_ahorro, marcar_stream=marcar_stream)
+                     callback_ahorro=set_ahorro, marcar_stream=marcar_stream,
+                     marcar_video=marcar_video)
         log("servidor web y telemetria en http://<ip-de-la-pi>:%d" % puerto_web)
 
     fps = ContadorFPS()
@@ -573,9 +765,13 @@ def main():
                 cam.despertar()
             durmiendo = cam.dormida
 
-            # Dormida, el bucle corre a ~20 Hz solo para atender el serial: asi
-            # el "P" del boton de inicio se contesta en menos de 50 ms.
-            frame = cam.leer(solo_nuevos=True, timeout=0.05 if durmiendo else 0.5)
+            # Mientras la camara no entregue fotos (dormida, o reabriendose
+            # tras despertar, 1-2 s) no se espera por ellas: el bucle corre a
+            # ~20 Hz solo para atender el serial. Si se quedara 0,5 s dentro de
+            # leer(), el "P" que llega despues de un log de la MegaPi se
+            # contestaria tarde y visionComprobar() (300 ms) fallaria.
+            sin_fotos = durmiendo or cam.estado()["estado"] != "CONECTADA"
+            frame = cam.leer(solo_nuevos=True, timeout=0.05 if sin_fotos else 0.5)
             det = Deteccion()
             color_detectado = "NINGUNO"
             roi_y0 = 0
@@ -662,14 +858,14 @@ def main():
                             modo = nuevo
                             color = nuevo
                             log("modo -> %s" % modo)
-                            enlace.enviar("K COLOR %s" % color)
+                            enlace.responder("K COLOR %s" % color)
                         elif nuevo in disponibles or nuevo == "AUTO":
                             color = nuevo
                             modo = "ARTEFACTO"
                             log("modo -> ARTEFACTO %s" % color)
-                            enlace.enviar("K COLOR %s" % color)
+                            enlace.responder("K COLOR %s" % color)
                         else:
-                            enlace.enviar("E COLOR")
+                            enlace.responder("E COLOR")
                     elif cmd == "M" and len(partes) >= 2:
                         nuevo_modo = partes[1].upper()
                         nuevo_color = partes[2].upper() if len(partes) >= 3 else color
@@ -683,12 +879,12 @@ def main():
                             else:
                                 color = nuevo_color
                             log("modo -> %s %s" % (modo, color))
-                            enlace.enviar("K MODO %s %s" % (modo, color))
+                            enlace.responder("K MODO %s %s" % (modo, color))
                         else:
-                            enlace.enviar("E MODO")
+                            enlace.responder("E MODO")
                     elif cmd == "F":
                         fila = detector.detectar_fila_artefactos(frame) if frame is not None else []
-                        enlace.enviar("F %d%s" % (
+                        enlace.responder("F %d%s" % (
                             len(fila), "" if not fila else " " +
                             " ".join(d.color for d in fila)))
                     elif cmd == "X":
@@ -700,16 +896,19 @@ def main():
                                 dc, _, _ = detector.detectar(frame, c)
                                 partes_resp.append("%s %d %d %d" % (
                                     c, 1 if dc.encontrado else 0, dc.ex, dc.dist_mm))
-                        enlace.enviar("X " + " ".join(partes_resp))
+                        enlace.responder("X " + " ".join(partes_resp))
                     elif cmd == "S" and len(partes) >= 2:
                         enviando = partes[1] != "0"
                         estado_global["enviando"] = enviando
-                        enlace.enviar("K STREAM %d" % (1 if enviando else 0))
+                        enlace.responder("K STREAM %d" % (1 if enviando else 0))
                     elif cmd == "P":
-                        enlace.enviar("K %s MODOS=PAUSA,ARTEFACTO,FILA,DESTINO,TORRE_REC,TORRE_DEST COLORES=AUTO,%s" %
+                        enlace.responder("K %s MODOS=PAUSA,ARTEFACTO,FILA,DESTINO,TORRE_REC,TORRE_DEST COLORES=AUTO,%s" %
                                       (VERSION, ",".join(disponibles)))
 
-            if buffer_frame is not None and frame is not None:
+            # La foto con overlay solo sirve para la web: sin nadie mirando no se
+            # dibuja ni se comprime (eran dos JPEG por foto). Esa CPU queda para
+            # la vision del robot durante las rondas.
+            if buffer_frame is not None and frame is not None and hay_web:
                 etiqueta = "%s/%s" % (modo, color_detectado if color == "AUTO" else color)
                 buffer_frame.set(dibujar_overlay(frame.copy(), det, etiqueta, f,
                                                  roi_y0, detector.cx_garra), frame)
