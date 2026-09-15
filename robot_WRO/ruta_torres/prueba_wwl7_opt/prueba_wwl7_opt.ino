@@ -2054,7 +2054,7 @@ void loop()
   avanzar(1460, V_RECTO_RAPIDO, 10.0);          // (1450) hasta donde todavia se ve la base
   visionCentrar("TORRE_DEST");                  // LA CAMARA corrige el rumbo mirando la base
   long falta = visionDistancia(2243 - 1460);    // 2087 = tramo completo medido en wwl5_opt
-  avanzar(falta-180, V_RECTO_MEDIO, 5.0);
+  avanzar(falta-180, V_RECTO, 5.0);
   recolectar(1);                                // 63: la sube por encima de la base
   girarIzquierdaGyro(1.75, V_GIRO_FINO); 
   avanzar(180, V_GIRO_FINO, 2.6);               // Completar con más velocidad para que no rebote
@@ -2105,18 +2105,19 @@ void loop()
   // retroceder(110, V_APROX, 4.0); abrirGarra(); avanzar(45, V_APROX, 2.5); cerrarGarra();
   cargaTorre(true);                             // desde aqui, rampas suaves
   retroceder(130, V_RECTO_MEDIO, 4.0);                // (115 + 31)
-  recolectar(4);
+  //recolectar(4);
 
 
   // ---- 7. Llevar la segunda hasta la base y colocarla encima ----
   girarARumbo(0.0, V_GIRO_FINO);              // a la derecha de como arranco (der 87 a 30 rpm)
-  retroceder(1095, V_RECTO, 5.0); 
-  girarARumbo(-93.0, V_GIRO); 
+  retroceder(1080, V_RECTO_RAPIDO, 5.0); 
+  girarARumbo(-95, V_GIRO); 
   // Se lleva BAJA (pala en 95): asi la camara ve la base por encima de la torre.
-  avanzar(1450, V_RECTO_RAPIDO, 10.0);          // (1450) hasta donde todavia se ve la base
+  recolectar(4);
+  avanzar(1600, V_RECTO_RAPIDO, 10.0);          // (1450) hasta donde todavia se ve la base
   girarARumbo(-90.0, V_GIRO_FINO);  
   visionCentrar("TORRE_DEST");                  // LA CAMARA corrige el rumbo mirando la base
-  long falta2 = visionDistancia(2190 - 1450);    // 2087 = tramo completo medido en wwl5_opt
+  long falta2 = visionDistancia(2196 - 1600);    // 2087 = tramo completo medido en wwl5_opt
   avanzar(falta2-180, V_GIRO_FINO, 5.0);
   recolectar(1);                                // 63: la sube por encima de la base
   avanzar(186, V_RECTO_MEDIO, 2.3);             // Completar con más velocidad para que no rebote
@@ -2133,42 +2134,38 @@ void loop()
   avanzar(1535, V_RECTO_RAPIDO, 8.0);
   _delay(0.25);
   avanzarRectoGyroLineaPerpendicular(370, V_RECTO_MEDIO, 10.0, 40, 2, V_APROX, 1.5f, 0);
-  girarARumbo(65.0, V_GIRO);
+  girarARumbo(65.0, V_GIRO_RAPIDO);
   avanzar(460, V_RECTO_RAPIDO, 3.0);
-  girarARumbo(180.0, V_GIRO);
+  girarARumbo(180.0, V_GIRO_RAPIDO);
   recolectar(1);
-  avanzar(500, V_RECTO_RAPIDO, 3.0);
+  //Avanzar para recolectar
+  avanzar(457, V_RECTO, 3.0);
   recolectar(2);
   retroceder(400, V_RECTO, 5.0); 
   girarARumbo(-90.0, V_GIRO);
-
-  //girarIzquierdaGyro(84.0, V_GIRO);
-  avanzar(1157, V_RECTO_RAPIDO, 7.0);
-  _delay(0.3);
-  avanzar(730, V_RECTO_RAPIDO, 5.0);
-  _delay(0.3);
-
+  avanzar(1457, V_RECTO_RAPIDO, 7.0);
+  //Voltear 180°
   girarIzquierdaGyro(175.0, V_GIRO_RAPIDO);
-  avanzar(205, V_RECTO_MEDIO, 4.0);
-  recolectar(1);
+  recolectar(1);//Subir pala
+  avanzar(70, V_RECTO_RAPIDO, 1.0); //205
 
   // Separar el rojo
   retroceder(200, V_APROX, 4.0);
-  girarDerechaGyro(30.0, V_GIRO_FINO);
+  girarDerechaGyro(30.0, V_GIRO_RAPIDO);
   avanzar(366, V_RECTO_MEDIO, 5.0);
   recolectar(2);
-  girarDerechaGyro(50.0, V_GIRO);
+  girarARumbo(0.0, V_GIRO_RAPIDO);
 
   // Empujar a la zona
-  avanzar(810, V_RECTO, 5.0);
+  avanzar(785, V_RECTO_RAPIDO, 5.0);
   recolectar(1);
   avanzar(55, V_APROX, 2.5);
-  retroceder(750, V_RECTO, 5.0);
+  retroceder(750, V_RECTO_RAPIDO, 5.0);
 
   // Voltear hacia el verde  (este era el giro que fallaba al cruzar el +-180)
   recolectar(2);
   girarIzquierdaGyro(160.0, V_GIRO_RAPIDO);
-  avanzar(505, V_RECTO, 4.0);
+  avanzar(505, V_RECTO_RAPIDO, 4.0);
 
   // Acomodar el verde si queda fuera
   recolectar(3);
@@ -2177,17 +2174,15 @@ void loop()
   abrirGarra();
   avanzar(45, V_APROX, 2.5);
 
-  // ---- TORRES AMARILLAS ----
+  // ---- TORRES ROJAS ----
   retroceder(100, V_APROX, 2.5);
   retroceder(870, V_RECTO_RAPIDO, 5.0);
-  girarDerechaGyro(99.0, V_GIRO);
-  _delay(0.3);
-  girarDerechaGyro(5.0, V_GIRO_FINO);
+  girarARumbo(90.0, V_GIRO_RAPIDO);
   recolectar(1);
 
   // Ir y centrar en linea
-  avanzar(160, V_RECTO, 3.5);
-  _delay(0.3);
+  //avanzar(160, V_RECTO, 3.5);
+  //_delay(0.3);
   avanzarRectoGyroLineaPerpendicular(390, V_RECTO_MEDIO, 12.0, 40, 2, 40, 0, 0);
 
   detener(1.0);
