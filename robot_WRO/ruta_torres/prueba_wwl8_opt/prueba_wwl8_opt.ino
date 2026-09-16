@@ -1786,7 +1786,7 @@ bool visionMedir(const char *modo, int &ex, int &ey, int &dist)
 // Gira con el giroscopio hasta que el objeto quede frente a la garra.
 // Devuelve true si quedo centrado. Si la camara no lo ve, no mueve el robot.
 // modo: "TORRE_REC", "TORRE_DEST" o "ARTEFACTO <COLOR>" (seccion 13).
-// intentos: medidas como maximo (los artefactos usan 2 para no perder tiempo).
+// intentos: medidas como maximo (los artefactos usan 3).
 bool visionCentrar(const char *modo, uint8_t intentos = VIS_INTENTOS)
 {
   visUltima.valida = false;
@@ -2219,7 +2219,8 @@ bool visionCentrarColor(int8_t c)
 {
   char modo[20];
   snprintf(modo, sizeof(modo), "ARTEFACTO %s", NOMBRE_COLOR[c]);
-  return visionCentrar(modo, 2);
+  return visionCentrar(modo, 3);              // los giros cortos quedan ~1 grado cortos:
+                                              // con 2 medidas quedaba en ex=14 o -16
 }
 
 // Grados que faltan hasta agarrar el artefacto segun la foto (ey de la ultima
@@ -2362,12 +2363,16 @@ void artefacto(void)
   _delay(MS_PALA / 1000.0f);
 
   // ---- 2. Confirmar el color y centrarlo con la camara ----
+  // Si la fila se vio entera, su color manda. AUTO elige lo mas centrado y el
+  // amarillo lleva piezas naranjas abajo: con el amarillo casi centrado (ex=14)
+  // AUTO dijo ROJO y lo llevo al cuadro rojo. Solo se pregunta el color si la
+  // camara no encuentra delante el color esperado.
   int8_t c = colorSlot[s];
   if (c < 0) c = visionColorAqui();                   // la fila no se vio entera
   bool centrado = (c >= 0) && visionCentrarColor(c);
-  if (c >= 0 && !centrado) {                          // no ve ese color: la fila se leyo mal?
+  if (c >= 0 && !centrado && !visUltima.valida) {     // ese color no esta delante
     int8_t otro = visionColorAqui();
-    if (otro >= 0 && otro != c) { c = otro; centrado = visionCentrarColor(c); }
+    if (otro >= 0 && otro != c && !museoLleno[otro]) { c = otro; centrado = visionCentrarColor(c); }
   }
   colorSlot[s] = c;
   slotHecho[s] = true;

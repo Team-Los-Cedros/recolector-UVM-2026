@@ -2032,10 +2032,10 @@ void loop()
   rutinaIniciada = true;
 
   // ---- 1. Ponerse frente a la torre amarilla ----
-  girarIzquierdaGyro(90.0, V_GIRO);             // (izq 85 a 95 rpm)
-  avanzar(180, V_RECTO_MEDIO, 3.0);             // (100)
+  girarIzquierdaGyro(90.0, V_GIRO_RAPIDO);             // (izq 85 a 95 rpm)
+  avanzar(180, V_RECTO_RAPIDO, 3.0);             // (100)
   girarARumbo(0.0, V_GIRO);                     // de frente otra vez, como arranco (der 85)
-  avanzar(410, V_RECTO, 6.0);                   // (605)
+  avanzar(410, V_RECTO, 5.0);                   // (605)
 
   // ---- 2. Recoger la parte superior de la torre ----
   bajar_pala();                                 // 105: garra abierta a ras del suelo
@@ -2052,42 +2052,44 @@ void loop()
   //--- 3. Recolectar la segunda torre amarrilla ---
   girarARumbo(23.0, V_GIRO_FINO);
   //visionCentrar("TORRE_REC"); 
-  avanzar(visionDistancia(265), V_APROX, 5.0);
+  //avanzar(visionDistancia(245), V_APROX, 5.0);
+  avanzar(255, V_APROX, 5.0);
   retroceder(25, V_APROX, 4.0); 
-  girarARumbo(-98.0, V_GIRO_FINO);
-  recolectar(4);
+  girarARumbo(-94.0, V_GIRO_FINO);
+  
   
   //--- 4. Recoger la parte superior de la torre 1 (izq) ---
-  avanzar(1530, V_RECTO_RAPIDO, 10.0);          // (1450) hasta donde todavia se ve la base
+  avanzar(1570, V_RECTO_RAPIDO, 10.0);          // (1450) hasta donde todavia se ve la base
+  recolectar(4);
   visionCentrar("TORRE_DEST");                  // LA CAMARA corrige el rumbo mirando la base
-  long falta = visionDistancia(2243 - 1460);    // 2087 = tramo completo medido en wwl5_opt
-  avanzar(falta-180, V_RECTO, 5.0);
+  long falta = visionDistancia(2337 - 1570);    // 2087 = tramo completo medido en wwl5_opt
+  avanzar(falta-180, V_RECTO_RAPIDO, 5.0);
   recolectar(1);                                // 63: la sube por encima de la base
-  girarIzquierdaGyro(1.75, V_GIRO_FINO); 
-  avanzar(190, V_GIRO_FINO, 2.6);     
+  girarIzquierdaGyro(1.25, V_GIRO_FINO); 
+  avanzar(180, V_RECTO_MEDIO, 2.6);     
   colocarSobreBase();                           // baja despacio, suelta, retrocede recto y sube la pala
   cargaTorre(false);                            // ya no la lleva: rampas normales
   visionPausar();
 
   //--- 5. Girar para llevar la segunda torre (der) ---
-  girarARumbo(180.0, V_APROX);
-  avanzar(400, V_RECTO, 4.6);
+  girarARumbo(180.0, V_GIRO);
+  avanzar(400, V_RECTO_RAPIDO, 4.6);
   //Retroceder para recolectar con garra
-  retroceder(500, V_RECTO_RAPIDO, 4.0); 
-  bajar_pala();   
+  retroceder(370, V_RECTO_RAPIDO, 4.0); 
+  bajar_pala();
+  girarIzquierdaGyro(20.0, V_GIRO_FINO); 
   visionCentrar("TORRE_REC"); 
-  avanzar(visionDistancia(765), V_APROX, 5.0); //(265) despacio para no tumbarla
+  avanzar(visionDistancia(275), V_APROX, 5.0); //(265) despacio para no tumbarla
   cerrarGarra();
   recolectar(4);  
   cargaTorre(true);
 
   //--- 6. Girar para llevar la segunda torre (der) ---
   visionCentrar("TORRE_DEST");
-  long falta2 = visionDistancia(500 - 0);    // 2087 = tramo completo medido en wwl5_opt
-  avanzar(falta2, V_APROX, 5.0);
+  long falta2 = visionDistancia(690 - 180);
+  avanzar(falta2, V_RECTO_RAPIDO, 3.0);
   recolectar(1);                                // 63: la sube por encima de la base
-  //avanzar(186, V_RECTO_MEDIO, 2.3);             // Completar con más velocidad para que no rebote
-                                                // (1,5 s se quedaba justo con la rampa de arranque)
+  avanzar(180, V_RECTO_MEDIO, 2.3);             // Completar con más velocidad para que no rebote
   colocarSobreBase();                           // baja despacio, suelta, retrocede recto y sube la pala
   cargaTorre(false);                            // ya no la lleva: rampas normales
   visionPausar();
@@ -2174,19 +2176,24 @@ void loop()
   visionPausar();
 */
   // ---- 8. Ir por visitantes (colores no aleatorios) ----
-  girarARumbo(35.0, V_GIRO_RAPIDO);
-  recolectar(2);
-  avanzar(295, V_RECTO_RAPIDO, 2.75);
+  //girarARumbo(35.0, V_GIRO_RAPIDO);
+  
+  //girarIzquierdaGyro(120.0, V_GIRO_RAPIDO);
+  
+  //avanzar(295, V_RECTO_RAPIDO, 2.75);
+  girarARumbo(-267.0, V_GIRO_RAPIDO);
+  recolectar(3);
+  
+  avanzar(1835, V_RECTO_RAPIDO, 8.0);
   girarARumbo(90.0, V_GIRO_RAPIDO);
-  avanzar(1535, V_RECTO_RAPIDO, 8.0);
   _delay(0.25);
-  avanzarRectoGyroLineaPerpendicular(370, V_RECTO_MEDIO, 10.0, 40, 2, V_APROX, 1.5f, 0);
-  girarARumbo(65.0, V_GIRO_RAPIDO);
+  avanzarRectoGyroLineaPerpendicular(370, V_RECTO_MEDIO, 10.0, 40, 2, V_APROX, 1.5f, 90);
+  //girarARumbo(65.0, V_GIRO_RAPIDO);
   avanzar(460, V_RECTO_RAPIDO, 3.0);
   girarARumbo(180.0, V_GIRO_RAPIDO);
   recolectar(1);
   //Avanzar para recolectar
-  avanzar(457, V_RECTO, 3.0);
+  avanzar(479, V_RECTO, 3.0);
   recolectar(2);
   retroceder(400, V_RECTO, 5.0); 
   girarARumbo(-90.0, V_GIRO);
