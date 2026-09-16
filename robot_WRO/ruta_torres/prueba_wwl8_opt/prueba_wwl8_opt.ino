@@ -1925,8 +1925,9 @@ void calibrarVision(void)
     miServo.write(PALA_VER_DESTINO);
     _delay(0.8);
   } else if (visionMedir(modo, ex, ey, d)) {
-    Serial.print(F("# CAL ex con la torre en la garra = ")); Serial.print(ex);
-    Serial.println(F("  (si no es 0, suma ese valor a torres.cx_garra)"));
+    Serial.print(F("# CAL ex con el objeto en la garra = ")); Serial.print(ex);
+    Serial.println(artef ? F("  (si no es 0, suma ese valor a geometria.cx_garra)")
+                         : F("  (si no es 0, suma ese valor a torres.cx_garra)"));
   }
 
   for (uint8_t i = 0; i < PUNTOS; i++) {
@@ -2255,6 +2256,12 @@ void garraSemi(void)                    // dedos casi cerrados. No espera: se mu
   servoGarra2.write(GARRA_SEMI_S2);
 }
 
+void garraAbiertaYa(void)               // dedos a los lados. Tampoco espera
+{
+  servoGarra1.write(GARRA_ABIERTA_S1);
+  servoGarra2.write(GARRA_ABIERTA_S2);
+}
+
 void garraCerrarRapido(void)
 {
   servoGarra1.write(GARRA_CERRADA_S1);
@@ -2307,7 +2314,7 @@ void reubicarEnSlot(int8_t s)
 void empezarArtefactos(float rumboDeLaFila)
 {
   miServo.write(PALA_AGARRE);                 // la camara necesita la pala abajo
-  garraSemi();
+  garraAbiertaYa();                           // dedos a los lados: fuera de la foto
   rumboFila = rumboDeLaFila;
 #if MODO_PRUEBA_ARTEFACTOS != 2               // en el modo 2 el robot no se mueve
   if (signoGiroIzq == 0) {                    // aun no hubo ningun giro: se aprende hacia
@@ -2323,7 +2330,7 @@ void empezarArtefactos(float rumboDeLaFila)
   for (int8_t i = 0; i < 5; i++) museoLleno[i] = false;
   artefactosLlevados = 0;
 
-  if (visionFila(1500)) {
+  if (visionFila(3000)) {                     // 3 s: si la camara estaba dormida tarda 1-2 s
     Serial.print(F("# ART fila:"));
     for (int8_t i = 0; i < 4; i++) { Serial.print(' '); Serial.print(NOMBRE_COLOR[colorSlot[i]]); }
     Serial.println();
@@ -2344,10 +2351,15 @@ void artefacto(void)
   const uint32_t t0 = millis();
 
   // ---- 1. Ir frente al artefacto (vacio: rapido; la pala baja por el camino) ----
-  miServo.write(PALA_AGARRE);
-  garraSemi();
+  // Se viaja con la pala en 95 (no arrastra la garra) y los dedos a los lados:
+  // asi, al mirar, los dedos quedan donde tapan zonas_ignoradas de config.json
+  // (con los dedos casi cerrados salen en la foto y el negro los confunde).
+  miServo.write(PALA_LLEVAR);
+  garraAbiertaYa();
   irA(xSlot(s), yMirarFila(), V_ART_VACIO, V_GIRO_RAPIDO);
+  miServo.write(PALA_AGARRE);                         // baja mientras apunta
   apuntarA(xSlot(s), yFila(), V_GIRO);                // de frente al artefacto
+  _delay(MS_PALA / 1000.0f);
 
   // ---- 2. Confirmar el color y centrarlo con la camara ----
   int8_t c = colorSlot[s];
@@ -2368,6 +2380,8 @@ void artefacto(void)
   // ---- 3. Agarrarlo de punta, levantarlo un poco y sacarlo de la fila ----
   long falta = (long)(distancia(odoX, odoY, xSlot(s), yFila()) - largo());
   if (centrado) falta = visionDistanciaArtefacto(falta);
+  garraSemi();                                        // ahora si: casi cerrados para no
+  _delay(MS_GARRA / 1000.0f);                         // tocar a los vecinos al entrar
   avanzarFino(falta);
   garraCerrarRapido();
   miServo.write(PALA_LLEVAR);
