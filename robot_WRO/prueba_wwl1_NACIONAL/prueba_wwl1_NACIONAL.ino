@@ -1480,7 +1480,7 @@ const int GARRA_ABIERTA_S2 = 180;
 
 const int anguloBajar       = 105;
 const int anguloTransportar = 33; //original 63
-const int anguloDepositar   = 70;
+const int anguloDepositar   = 73;
 
 void abrirGarra(void)
 {
@@ -2055,41 +2055,42 @@ void loop()
   //avanzar(visionDistancia(245), V_APROX, 5.0);
   avanzar(255, V_APROX, 5.0);
   retroceder(25, V_APROX, 4.0); 
-  girarARumbo(-94.0, V_GIRO_FINO);
+  girarARumbo(-95.0, V_GIRO_FINO);
   
   
   //--- 4. Recoger la parte superior de la torre 1 (izq) ---
-  avanzar(1570, V_RECTO_RAPIDO, 10.0);          // (1450) hasta donde todavia se ve la base
+  avanzar(1600, V_RECTO_RAPIDO, 10.0);          // (1450) hasta donde todavia se ve la base
   recolectar(4);
   visionCentrar("TORRE_DEST");                  // LA CAMARA corrige el rumbo mirando la base
-  long falta = visionDistancia(2337 - 1570);    // 2087 = tramo completo medido en wwl5_opt
+  long falta = visionDistancia(2338 - 1600);    // 2087 = tramo completo medido en wwl5_opt
   avanzar(falta-180, V_RECTO_RAPIDO, 5.0);
   recolectar(1);                                // 63: la sube por encima de la base
   girarIzquierdaGyro(1.25, V_GIRO_FINO); 
-  avanzar(180, V_RECTO_MEDIO, 2.6);     
+  avanzar(190, V_RECTO_MEDIO, 2.6);     
   colocarSobreBase();                           // baja despacio, suelta, retrocede recto y sube la pala
   cargaTorre(false);                            // ya no la lleva: rampas normales
   visionPausar();
 
-  //--- 5. Girar para llevar la segunda torre (der) ---
+  //--- 5. Girar para buscar la segunda torre (der) ---
+  avanzar(20, V_RECTO_MEDIO, 1.25);
   girarARumbo(180.0, V_GIRO);
   avanzar(400, V_RECTO_RAPIDO, 4.6);
   //Retroceder para recolectar con garra
-  retroceder(370, V_RECTO_RAPIDO, 4.0); 
+  retroceder(373, V_RECTO_RAPIDO, 4.0); 
   bajar_pala();
-  girarIzquierdaGyro(20.0, V_GIRO_FINO); 
+  girarIzquierdaGyro(31.0, V_GIRO_FINO); 
   visionCentrar("TORRE_REC"); 
-  avanzar(visionDistancia(275), V_APROX, 5.0); //(265) despacio para no tumbarla
+  avanzar(visionDistancia(279), V_APROX, 5.0); //(265) despacio para no tumbarla
   cerrarGarra();
   recolectar(4);  
   cargaTorre(true);
 
-  //--- 6. Girar para llevar la segunda torre (der) ---
+  //--- 6. Llevar la segunda torre (der) y colocarla encima ---
   visionCentrar("TORRE_DEST");
   long falta2 = visionDistancia(690 - 180);
   avanzar(falta2, V_RECTO_RAPIDO, 3.0);
   recolectar(1);                                // 63: la sube por encima de la base
-  avanzar(180, V_RECTO_MEDIO, 2.3);             // Completar con más velocidad para que no rebote
+  avanzar(185, V_RECTO_MEDIO, 2.3);             // Completar con más velocidad para que no rebote
   colocarSobreBase();                           // baja despacio, suelta, retrocede recto y sube la pala
   cargaTorre(false);                            // ya no la lleva: rampas normales
   visionPausar();
