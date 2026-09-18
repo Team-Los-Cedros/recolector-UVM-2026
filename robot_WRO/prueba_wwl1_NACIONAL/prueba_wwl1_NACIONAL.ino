@@ -229,7 +229,7 @@
 #define V_RECTO_RAPIDO  150.0f   // tramos largos
 
 // Umbrales de los TCRT5000
-int UMBRAL_NEGRO_IZQ = 31;
+int UMBRAL_NEGRO_IZQ = 61; //Es 31
 int UMBRAL_NEGRO_DER = 41;
 
 // ============================================================================
@@ -2177,57 +2177,52 @@ void loop()
   visionPausar();
 */
   // ---- 8. Ir por visitantes (colores no aleatorios) ----
-  //girarARumbo(35.0, V_GIRO_RAPIDO);
-  
-  //girarIzquierdaGyro(120.0, V_GIRO_RAPIDO);
-  
-  //avanzar(295, V_RECTO_RAPIDO, 2.75);
-  girarARumbo(-267.0, V_GIRO_RAPIDO);
-  recolectar(3);
-  
+  girarARumbo(-268.0, V_GIRO_RAPIDO);
+  //recolectar(3);
   avanzar(1835, V_RECTO_RAPIDO, 8.0);
   girarARumbo(90.0, V_GIRO_RAPIDO);
   _delay(0.25);
-  avanzarRectoGyroLineaPerpendicular(370, V_RECTO_MEDIO, 10.0, 40, 2, V_APROX, 1.5f, 90);
-  //girarARumbo(65.0, V_GIRO_RAPIDO);
-  avanzar(460, V_RECTO_RAPIDO, 3.0);
-  girarARumbo(180.0, V_GIRO_RAPIDO);
-  recolectar(1);
+  avanzarRectoGyroLineaPerpendicular(270, V_RECTO_MEDIO, 10.0, 40, 2, V_APROX, 1.5f, 45);
+  //Hacia atrás para buscar negro y azul
+  girarARumbo(145.0, V_GIRO_RAPIDO);
+  retroceder(76, V_RECTO, 3.0);
+  girarARumbo(178.5, V_GIRO);
+  //recolectar(1);
   //Avanzar para recolectar
-  avanzar(479, V_RECTO, 3.0);
+  avanzar(432, V_RECTO, 3.0);
   recolectar(2);
-  retroceder(400, V_RECTO, 5.0); 
-  girarARumbo(-90.0, V_GIRO);
-  avanzar(1457, V_RECTO_RAPIDO, 7.0);
-  //Voltear 180°
-  girarIzquierdaGyro(175.0, V_GIRO_RAPIDO);
-  recolectar(1);//Subir pala
-  avanzar(70, V_RECTO_RAPIDO, 1.0); //205
+  retroceder(380, V_RECTO, 5.0); 
+  //Ir por particulas
+  girarARumbo(-79.0, V_GIRO);
+  avanzar(2817, V_RECTO_RAPIDO, 10.0);
 
-  // Separar el rojo
-  retroceder(200, V_APROX, 4.0);
-  girarDerechaGyro(30.0, V_GIRO_RAPIDO);
-  avanzar(366, V_RECTO_MEDIO, 5.0);
-  recolectar(2);
-  girarARumbo(0.0, V_GIRO_RAPIDO);
-
-  // Empujar a la zona
-  avanzar(785, V_RECTO_RAPIDO, 5.0);
+  // ---- 9. Barrer ----
+  //barrer();
+  girarARumbo(-181.0, V_GIRO_RAPIDO);
+  retroceder(160, V_RECTO_RAPIDO, 4.0);
+  //parabrisas(360, V_APROX); 
+  //retroceder(300, V_RECTO_RAPIDO, 3.0);
+  barrer();
+  avanzar(867, V_RECTO_MEDIO, 10.0);
+  retroceder(360, V_RECTO_MEDIO, 3.5);
+  //Enderezar para separar visitantes
+  girarARumbo(-100.0, V_GIRO_RAPIDO);
+  retroceder(300, V_RECTO_MEDIO, 3.5);
   recolectar(1);
-  avanzar(55, V_APROX, 2.5);
-  retroceder(750, V_RECTO_RAPIDO, 5.0);
-
-  // Voltear hacia el verde  (este era el giro que fallaba al cruzar el +-180)
-  recolectar(2);
-  girarIzquierdaGyro(160.0, V_GIRO_RAPIDO);
-  avanzar(505, V_RECTO_RAPIDO, 4.0);
-
-  // Acomodar el verde si queda fuera
-  recolectar(3);
-  servoGarra2.write(GARRA_CERRADA_S2);
-  girarIzquierdaGyro(35.0, V_GIRO_FINO);
-  abrirGarra();
-  avanzar(45, V_APROX, 2.5);
+  //Separar negro
+  retroceder(300, V_RECTO_MEDIO, 3.5);
+  girarIzquierdaGyro(30.0, V_GIRO_RAPIDO);
+  avanzar(356, V_RECTO_MEDIO, 5.0);
+  //Ubicar negro
+  girarARumbo(10.0, V_GIRO_RAPIDO);
+  avanzar(110, V_RECTO_MEDIO, 5.0);
+  //Ir por el azul
+  retroceder(120, V_RECTO_MEDIO, 3.5);
+  girarARumbo(-90.0, V_GIRO_RAPIDO);
+  retroceder(120, V_RECTO_MEDIO, 3.5);
+  subir_pala();
+  avanzar(966, V_RECTO_MEDIO, 5.0);
+  
 
   // ---- TORRES ROJAS ----
   retroceder(100, V_APROX, 2.5);
