@@ -229,7 +229,7 @@
 #define V_RECTO_RAPIDO  150.0f   // tramos largos
 
 // Umbrales de los TCRT5000
-int UMBRAL_NEGRO_IZQ = 61; //Es 31
+int UMBRAL_NEGRO_IZQ = 31; //Es 31
 int UMBRAL_NEGRO_DER = 41;
 
 // ============================================================================
@@ -2078,7 +2078,7 @@ void loop()
   //Retroceder para recolectar con garra
   retroceder(373, V_RECTO_RAPIDO, 4.0); 
   bajar_pala();
-  girarIzquierdaGyro(31.0, V_GIRO_FINO); 
+  girarIzquierdaGyro(11.0, V_GIRO_FINO); 
   visionCentrar("TORRE_REC"); 
   avanzar(visionDistancia(279), V_APROX, 5.0); //(265) despacio para no tumbarla
   cerrarGarra();
@@ -2189,12 +2189,12 @@ void loop()
   girarARumbo(178.5, V_GIRO);
   //recolectar(1);
   //Avanzar para recolectar
-  avanzar(432, V_RECTO, 3.0);
+  avanzar(370, V_RECTO, 3.0);
   recolectar(2);
-  retroceder(380, V_RECTO, 5.0); 
+  retroceder(320, V_RECTO, 5.0); 
   //Ir por particulas
   girarARumbo(-79.0, V_GIRO);
-  avanzar(2817, V_RECTO_RAPIDO, 10.0);
+  avanzar(2770, V_RECTO_RAPIDO, 10.0);
 
   // ---- 9. Barrer ----
   //barrer();
@@ -2210,9 +2210,9 @@ void loop()
   retroceder(300, V_RECTO_MEDIO, 3.5);
   recolectar(1);
   //Separar negro
-  retroceder(300, V_RECTO_MEDIO, 3.5);
-  girarIzquierdaGyro(30.0, V_GIRO_RAPIDO);
-  avanzar(356, V_RECTO_MEDIO, 5.0);
+  retroceder(350, V_RECTO_MEDIO, 3.5);
+  girarIzquierdaGyro(25.0, V_GIRO_RAPIDO);
+  avanzar(300, V_RECTO_MEDIO, 5.0);
   //Ubicar negro
   girarARumbo(10.0, V_GIRO_RAPIDO);
   avanzar(110, V_RECTO_MEDIO, 5.0);
