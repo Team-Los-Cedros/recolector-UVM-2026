@@ -34,6 +34,55 @@
 | **Cámara USB (UVC)** | `/dev/video0` (USB Camera 320x240 @ 20 fps reales) |
 | **Controlador MegaPi** | `/dev/ttyUSB0` (115200 baudios, 8N1) |
 
+### 📶 Enlace Inalámbrico: Punto de Acceso BLUESTEM
+
+La Pi genera su **propia red Wi-Fi** (modo AP). No depende de router, red de sede ni internet. El Wi-Fi arranca **apagado en cada reinicio** para ahorrar energía; se enciende a mano desde una sesión por cable.
+
+| Parámetro | Valor |
+|---|---|
+| **SSID** | `BLUESTEM` |
+| **Clave** | `robotCLC` |
+| **IP de la Pi (como AP)** | `10.42.0.1` |
+| **Rango entregado a clientes** | `10.42.0.x` (DHCP de NetworkManager) |
+| **IP fija por Ethernet** | `192.168.137.50` |
+| **Perfil NetworkManager** | `Hotspot` (`autoconnect: no`) |
+
+**Secuencia para pasar a inalámbrico:**
+
+```bash
+# 1. Con el cable Ethernet conectado entre la PC y la Pi:
+ssh pi
+
+# 2. Encender el punto de acceso:
+sudo wifi-on
+
+# 3. Quitar el cable y conectar la PC a la red BLUESTEM.
+```
+
+**Apagar el Wi-Fi** (funciona igual por cable o por Wi-Fi):
+
+```bash
+sudo wifi-off
+```
+
+Si lo lanzas estando conectado por Wi-Fi, tu sesión se cierra en 1 segundo: es normal. El apagado se completa igual porque corre como unidad transitoria de `systemd`, independiente de la sesión SSH.
+
+**Requisito en la PC (Windows):** el adaptador Ethernet necesita IP fija en la subred de la Pi, o `ssh pi` no la encontrará al conectar el cable. En PowerShell **como Administrador**, una sola vez:
+
+```powershell
+New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 192.168.137.1 -PrefixLength 24
+```
+
+**Archivos que implementan esto en la Pi:**
+
+| Ruta | Función |
+|---|---|
+| `/usr/local/bin/wifi-on` | Enciende el radio y levanta el AP |
+| `/usr/local/bin/wifi-off` | Baja el AP y apaga el radio |
+| `/etc/systemd/system/wifi-off-at-boot.service` | Fuerza Wi-Fi apagado en cada arranque |
+
+> ⚠️ **Nota de hardware:** el chip Wi-Fi de la Pi 3B (BCM43430) no soporta la combinación `WPA-PSK + WPA-PSK-SHA256` que NetworkManager usa por defecto en hotspots; falla con `key setting validation failed`. El perfil `Hotspot` quedó fijado a WPA2-PSK simple (`proto rsn`, `pairwise/group ccmp`, PMF y WPS desactivados). **No cambiar esos valores.** WPS desactivado además evita que Windows pida un PIN de 8 dígitos en vez de la contraseña.
+
 ### 🌐 Puertos Web y Servicios Expuestos
 
 | Puerto | Herramienta | URL Local / Navegador | Función |
