@@ -2087,10 +2087,10 @@ void loop()
 
   //--- 6. Llevar la segunda torre (der) y colocarla encima ---
   visionCentrar("TORRE_DEST");
-  long falta2 = visionDistancia(690 - 180);
+  long falta2 = visionDistancia(685 - 180);
   avanzar(falta2, V_RECTO_RAPIDO, 3.0);
   recolectar(1);                                // 63: la sube por encima de la base
-  avanzar(185, V_RECTO_MEDIO, 2.3);             // Completar con más velocidad para que no rebote
+  avanzar(179, V_RECTO_MEDIO, 2.3);             // Completar con más velocidad para que no rebote
   colocarSobreBase();                           // baja despacio, suelta, retrocede recto y sube la pala
   cargaTorre(false);                            // ya no la lleva: rampas normales
   visionPausar();
@@ -2179,7 +2179,7 @@ void loop()
   // ---- 8. Ir por visitantes (colores no aleatorios) ----
   girarARumbo(-268.0, V_GIRO_RAPIDO);
   //recolectar(3);
-  avanzar(1835, V_RECTO_RAPIDO, 8.0);
+  avanzar(1845, V_RECTO_RAPIDO, 8.0);
   girarARumbo(90.0, V_GIRO_RAPIDO);
   _delay(0.25);
   avanzarRectoGyroLineaPerpendicular(270, V_RECTO_MEDIO, 10.0, 40, 2, V_APROX, 1.5f, 45);
@@ -2189,7 +2189,7 @@ void loop()
   girarARumbo(178.5, V_GIRO);
   //recolectar(1);
   //Avanzar para recolectar
-  avanzar(370, V_RECTO, 3.0);
+  avanzar(373, V_RECTO, 3.0);
   recolectar(2);
   retroceder(320, V_RECTO, 5.0); 
   //Ir por particulas
@@ -2212,14 +2212,16 @@ void loop()
   //Separar negro
   retroceder(350, V_RECTO_MEDIO, 3.5);
   girarIzquierdaGyro(25.0, V_GIRO_RAPIDO);
-  avanzar(300, V_RECTO_MEDIO, 5.0);
+  avanzar(500, V_RECTO_MEDIO, 5.0);
   //Ubicar negro
-  girarARumbo(10.0, V_GIRO_RAPIDO);
+ girarARumbo(10.0, V_GIRO_RAPIDO);
   avanzar(110, V_RECTO_MEDIO, 5.0);
   //Ir por el azul
   retroceder(120, V_RECTO_MEDIO, 3.5);
-  girarARumbo(-90.0, V_GIRO_RAPIDO);
-  retroceder(120, V_RECTO_MEDIO, 3.5);
+  girarARumbo(-179.0, V_GIRO_RAPIDO);
+  avanzar(130, V_RECTO_MEDIO, 5.0);
+  retroceder(100, V_RECTO_MEDIO, 3.5);
+  girarARumbo(-270.0, V_GIRO_RAPIDO);
   subir_pala();
   avanzar(966, V_RECTO_MEDIO, 5.0);
   
