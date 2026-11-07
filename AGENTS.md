@@ -6,7 +6,7 @@ Este archivo contiene las directivas permanentes para el agente de IA al interac
 
 ## 1. Conexión SSH a la Raspberry Pi del Robot
 
-- **Alias SSH configurado:** `robot-pi` (también responde por `clc-wro-rm.local` y `192.168.0.166`).
+- **Alias SSH configurado:** `pi` (también `clc-wro-rm.local`; por cable Ethernet 192.168.137.50, pasa por WSL con `pi-proxy`).
 - **Usuario:** `pi`
 - **Autenticación:** Clave SSH dedicada `~/.ssh/id_robot_ed25519` instalada y configurada en `~/.ssh/config`. **No requiere contraseña.**
 - **Permisos de root:** `sudo` sin contraseña (`NOPASSWD`) habilitado en `/etc/sudoers.d/010_pi-nopasswd`.
