@@ -13,6 +13,7 @@
 //    - Garra Ultimate 2.0: motor DC en el SLOT3 (canal B por defecto, se puede
 //      cambiar a A con "gport a").
 //    - Giroscopio MPU6050 (I2C del hardware, 0x68), solo eje Z.
+//    - Sensor ultrasonico Makeblock en el puerto 7.
 //    - Motores de traccion con encoder: SLOT1 (izq) y SLOT2 (der).
 //    - Boton de arranque en el pin 4.
 //
@@ -549,8 +550,25 @@ void mostrarGarra()
 // ============================================================================
 //  SALIDA CONTINUA (para leer en vivo o desde la Pi)
 // ============================================================================
-bool verTCS = false, verGyro = false, verEnc = false;
+MeUltrasonicSensor ultrasonico(PORT_7);
+bool verTCS = false, verGyro = false, verEnc = false, verUltra = false;
 uint32_t tVer = 0;
+
+void imprimirUltrasonico()
+{
+  // distanceCm() de Makeblock devuelve la distancia maxima cuando no hay eco.
+  const unsigned long usPorCm = 58;
+  const unsigned long eco = ultrasonico.measure(400 * usPorCm);
+  Serial.print(F("# Ultrasonico (P7): "));
+  if (eco == 0) {
+    Serial.println(F("SIN ECO"));
+  } else if (eco < 3 * usPorCm || eco > 400 * usPorCm) {
+    Serial.println(F("FUERA DE RANGO"));
+  } else {
+    Serial.print((float)eco / usPorCm, 1);
+    Serial.println(F(" cm"));
+  }
+}
 
 void imprimirTCS(uint8_t s)
 {
@@ -585,6 +603,7 @@ void imprimirFlujo()
     Serial.print(F(" der=")); Serial.print(-gradosRueda(Encoder_2), 1);
     Serial.println(F(" (grados de rueda)"));
   }
+  if (verUltra) imprimirUltrasonico();
 }
 
 // ============================================================================
@@ -612,6 +631,9 @@ void ayuda()
     " m <izq> <der> <ms>  mover ruedas (pwm -255..255, + = adelante)\n"
     " e                 ver encoders en vivo     er  poner a cero\n"
     " y                 ver giroscopio en vivo   yc  recalibrar (quieto)\n"
+    "--- Ultrasonico (P7) ---\n"
+    " u                 medir una vez en cm\n"
+    " uv                activar/desactivar lecturas en vivo\n"
     "--- EEPROM ---\n"
     " guardar           guardar calibracion y garra\n"
     " borrar            volver a valores por defecto (no guarda)\n"));
@@ -651,7 +673,7 @@ void pararTodo()
 {
   pararMotores();
   garraParar();
-  verTCS = verGyro = verEnc = false;
+  verTCS = verGyro = verEnc = verUltra = false;
   Serial.println(F("# PARADO"));
 }
 
@@ -726,6 +748,8 @@ void ejecutar(char *linea)
   else if (!strcmp(cmd, "yc")) {
     Serial.println(calibrarGyro() ? F("# Giro calibrado") : F("# Giro: FALLO"));
   }
+  else if (!strcmp(cmd, "u")) imprimirUltrasonico();
+  else if (!strcmp(cmd, "uv")) verUltra = !verUltra;
   // ---- EEPROM ----
   else if (!strcmp(cmd, "guardar")) { EEPROM.put(0, cfg); Serial.println(F("# Guardado en EEPROM")); }
   else if (!strcmp(cmd, "borrar")) { configPorDefecto(); iniciarTCS(); Serial.println(F("# Valores por defecto (sin guardar)")); }
