@@ -1,0 +1,82 @@
+#!/bin/bash
+set -e
+export LC_ALL=C
+
+case "${1:-estado}" in
+    estado)
+        nmcli -f GENERAL.STATE,GENERAL.CONNECTION,IP4.ADDRESS device show wlan0
+        exit
+        ;;
+    ap|router) ;;
+    *)
+        echo 'Uso: robot-wifi [estado | ap | router [PERFIL_GUARDADO]]' >&2
+        exit 2
+        ;;
+esac
+
+if [[ $# -gt 2 || ($1 == ap && $# != 1) ]]; then
+    echo 'Uso: robot-wifi [estado | ap | router [PERFIL_GUARDADO]]' >&2
+    exit 2
+fi
+if [[ $EUID != 0 ]]; then
+    echo 'Ejecuta el cambio con sudo desde la consola o por Ethernet.' >&2
+    exit 1
+fi
+
+exec 9>/run/lock/robot-wifi.lock
+flock -n 9 || { echo 'Ya hay un cambio de Wi-Fi en curso.' >&2; exit 1; }
+
+previous_radio=$(nmcli radio wifi)
+previous_uuid=$(nmcli -g GENERAL.CON-UUID device show wlan0)
+target_uuid=
+if [[ $1 == ap || $# == 2 ]]; then
+    profile=${2:-Hotspot}
+    mode=$(nmcli -g 802-11-wireless.mode connection show id "$profile")
+    if [[ ($1 == ap && $mode != ap) || ($1 == router && $mode != infrastructure && $mode != -- && -n $mode) ]]; then
+        echo "El perfil '$profile' no corresponde al modo solicitado." >&2
+        exit 2
+    fi
+    target_uuid=$(nmcli -g connection.uuid connection show id "$profile")
+    if [[ $target_uuid == "$previous_uuid" ]]; then
+        "$0" estado
+        exit
+    fi
+fi
+
+restore_wifi() {
+    local result=$?
+    echo 'Cambio interrumpido o fallido. Restaurando el estado anterior del Wi-Fi…' >&2
+    if [[ $previous_radio == disabled ]]; then
+        nmcli radio wifi off || echo 'No se pudo apagar el Wi-Fi.' >&2
+    elif [[ -n $previous_uuid && $previous_uuid != -- ]]; then
+        nmcli --wait 45 connection up uuid "$previous_uuid" ifname wlan0 ||
+            echo 'No se pudo recuperar la conexión anterior.' >&2
+    else
+        nmcli device disconnect wlan0 >/dev/null 2>&1 || true
+    fi
+    exit "$result"
+}
+trap restore_wifi EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+
+nmcli radio wifi on
+# Bajar el AP antes de escanear o activar otro perfil en la misma interfaz.
+disconnect_status=0
+nmcli device disconnect wlan0 || disconnect_status=$?
+if [[ $disconnect_status != 0 && $disconnect_status != 6 ]]; then
+    exit "$disconnect_status"
+fi
+
+if [[ -n $target_uuid ]]; then
+    nmcli --wait 45 connection up uuid "$target_uuid" ifname wlan0
+else
+    nmcli -f IN-USE,SSID,SIGNAL,SECURITY device wifi list ifname wlan0 --rescan yes
+    read -r -p 'Nombre exacto de la red (Enter para cancelar): ' ssid
+    [[ -n $ssid ]] || exit 0
+    nmcli --ask --wait 45 device wifi connect "$ssid" ifname wlan0
+fi
+
+trap - EXIT INT TERM HUP
+"$0" estado
